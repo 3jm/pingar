@@ -1,6 +1,8 @@
 # Network Helper
 Designed for checking ping
 
+# THIS NEEDS WINPCAP TO WORK
+
 ## Current Features & Functions
 - Displays ping in a colorized format:
 (65<) Green
