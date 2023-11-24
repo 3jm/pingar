@@ -2,6 +2,7 @@
 Designed for checking ping
 
 # THIS NEEDS WINPCAP TO WORK
+[Download WinPcap Here](https://www.winpcap.org/install/default.htm)
 
 ## Current Features & Functions
 - Displays ping in a colorized format:
