@@ -5,9 +5,11 @@ import sys
 import configparser
 import os
 import ctypes 
+from ping3 import ping
+
 
 CONFIG_FILE = "ping_config.cfg"
-REQUIRED_PACKAGES = ["ping3", "colorama"]
+REQUIRED_PACKAGES = ["ping3", "colorama", "scapy"]
 
 def check_packages():
     missing_packages = [package for package in REQUIRED_PACKAGES if not is_package_installed(package)]
@@ -59,28 +61,71 @@ def get_timeout_from_user():
 
 def check_ping(host):
     try:
-        from ping3 import ping
-        delay = ping(host)
+        delay = ping(host, timeout=2)
         if delay is not None:
-            return delay
+            success = True
         else:
-            return None
-    except ImportError:
-        return None
+            success = False
+        return success, delay
+    except Exception as e:
+        print(f"Error during ping: {e}")
+        return False, None
+
+from scapy.all import ARP, Ether, srp
+import ipaddress
+
+def discover_devices(ip_range):
+    devices = []
+    try:
+        # Create ARP request packet
+        arp = ARP(pdst=ip_range)
+        ether = Ether(dst="ff:ff:ff:ff:ff:ff")
+        packet = ether/arp
+
+        # Send ARP request and receive response
+        result = srp(packet, timeout=3, verbose=0)[0]
+
+        # Extract devices from the response
+        for sent, received in result:
+            devices.append({'ip': received.psrc, 'mac': received.hwsrc})
+
+        return devices
+
+    except Exception as e:
+        print(f"Error during device discovery: {e}")
+        return devices
+
+def get_network_devices():
+    network_ip = "192.168.0.1/24"  # Adjust the network IP range as per your network configuration
+    devices = discover_devices(network_ip)
+    return devices
+
+from colorama import Fore, Style
 
 def colorize_ping(delay):
-    from colorama import Fore, Style
-
     ms = int(delay * 1000)
-    if delay < 50:
-        return f"{Fore.GREEN}{ms}ms{Style.RESET_ALL}"
-    elif 50 <= delay <= 80:
-        return f"{Fore.YELLOW}{ms}ms{Style.RESET_ALL}"
+    
+    if ms < 65:
+        color = Fore.GREEN
+    elif 65 <= ms <= 110:
+        color = Fore.YELLOW
     else:
-        return f"{Fore.RED}{ms}ms{Style.RESET_ALL}"
+        color = Fore.RED
+
+    return f"{color}{ms}ms{Style.RESET_ALL}"
 
 def set_window_title(title):
     ctypes.windll.kernel32.SetConsoleTitleW(title)
+
+def print_device_count():
+    devices = get_network_devices()
+    device_count = len(devices)
+    
+    if device_count > 0:
+        return f" | {device_count} devices connected"
+    else:
+        return " | No devices found"
+
 
 def main():
     missing_packages = check_packages()
@@ -121,18 +166,19 @@ def main():
     print(f"{Fore.LIGHTRED_EX}({platform.node()}){Style.RESET_ALL} >> Pinging {host}... (Timeout: {timeout}s)")
 
     while True:
-        delay = check_ping(host)
-        if delay is not None:
+        success, delay = check_ping(host)
+        if success:
             ping_history.append(delay)
             if len(ping_history) > 10:
                 ping_history.pop(0)
 
-            average_ping = sum(ping_history) / len(ping_history)
+            average_ping = sum(filter(None, ping_history)) / len(list(filter(None, ping_history)))
             colored_ping = colorize_ping(delay)
-            print(f"{Fore.LIGHTRED_EX}({platform.node()}){Style.RESET_ALL} >> Ping ({colored_ping}) | Average ({int(average_ping * 1000)}ms)")
+            device_count_info = print_device_count()
+            print(f"{Fore.LIGHTRED_EX}({platform.node()}){Style.RESET_ALL} >> Ping ({colored_ping}) | Average ({int(average_ping * 1000)}ms){device_count_info}")
 
         else:
-            print(f"{Fore.LIGHTRED_EX}({platform.node()}){Style.RESET_ALL} >> Failed to get response.")
+            print(f"{Fore.LIGHTRED_EX}({platform.node()}){Style.RESET_ALL} >> Packet loss detected.")
 
         time.sleep(timeout)
 
